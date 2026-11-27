@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // The entry: the office printer answers back. The human said "just one
@@ -26,11 +27,47 @@ function validateEntry(text: string): void {
   }
 }
 
+function selfTest(): void {
+  if (ENTRY_TEXT.length !== 92) {
+    throw new Error(
+      `self-test failed: entry must be exactly 92 characters, got ${ENTRY_TEXT.length}`,
+    );
+  }
+  validateEntry(ENTRY_TEXT);
+  const dir = mkdtempSync(join(tmpdir(), "printer-selftest-"));
+  try {
+    const outPath = join(dir, ENTRY_FILENAME);
+    writeFileSync(outPath, ENTRY_TEXT, "utf8");
+    const back = readFileSync(outPath, "utf8");
+    if (back !== ENTRY_TEXT) {
+      throw new Error("self-test failed: round-trip bytes differ");
+    }
+    if (back.endsWith("\n")) {
+      throw new Error("self-test failed: trailing newline");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  console.log(
+    "self-test: OK — entry is exactly 92 characters, no trailing newline, output-dir round-trip byte-identical",
+  );
+}
+
 function main(): void {
   validateEntry(ENTRY_TEXT);
   const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
   mkdirSync(outputDir, { recursive: true });
-  writeFileSync(join(outputDir, ENTRY_FILENAME), ENTRY_TEXT, "utf8");
+  const outPath = join(outputDir, ENTRY_FILENAME);
+  writeFileSync(outPath, ENTRY_TEXT, "utf8");
+  // Guard: never leave a file whose bytes differ from the entry.
+  const written = readFileSync(outPath, "utf8");
+  if (written !== ENTRY_TEXT) {
+    throw new Error("round-trip check failed: written entry differs");
+  }
 }
 
-main();
+if (process.argv.includes("--self-test")) {
+  selfTest();
+} else {
+  main();
+}
